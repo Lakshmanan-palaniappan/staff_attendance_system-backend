@@ -41,4 +41,12 @@ export const StaffModel = {
       idCardNumber: { type: sql.NVarChar, value: idCardNumber.trim() },
     });
   },
+  async getById(staffId) {
+    const query = `
+      SELECT StaffId, Name, Username, IdCardNumber 
+      FROM Staff
+      WHERE StaffId = @staffId
+    `;
+    return await runQuery(query, { staffId: { type: sql.Int, value: staffId } });
+  },
 };

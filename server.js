@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 import cors from "cors";
 import authRoutes from "./routes/authRoute.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
+import staffRoutes from "./routes/staffRoutes.js";
+
+
 
 dotenv.config();
 const app = express();
@@ -12,6 +15,7 @@ app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/attendance", attendanceRoutes);
+app.use("/staff", staffRoutes);
 
 app.get("/", (req, res) => res.send("Staff Attendance API Running"));
 
