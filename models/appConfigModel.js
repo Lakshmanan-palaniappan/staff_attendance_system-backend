@@ -1,15 +1,8 @@
-import { executeQuery } from "../helpers/sqlHelper.js";
+import { runQuery } from "../db.js";
 
 export const AppConfigModel = {
   async getConfig() {
-    const result = await executeQuery(
-      `SELECT TOP 1 CollegeLat, CollegeLng, AllowedRadiusMeters FROM AppConfig`
-    );
-    console.log("AppConfig query result:", result);
-
-    if (!result || result.length === 0) {
-      return null; // handle empty
-    }
-    return result[0];
-  },
+    const r = await runQuery(`SELECT TOP 1 CollegeLat, CollegeLng, AllowedRadiusMeters FROM AppConfig`);
+    return r && r.length ? r[0] : null;
+  }
 };

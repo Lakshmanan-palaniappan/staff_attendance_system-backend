@@ -49,4 +49,8 @@ export const StaffModel = {
     `;
     return await runQuery(query, { staffId: { type: sql.Int, value: staffId } });
   },
+  async getAll() {
+    return await runQuery(`SELECT StaffId, Name, Username, IdCardNumber FROM Staff ORDER BY Name`);
+  },
+
 };

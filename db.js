@@ -1,6 +1,5 @@
 import sql from 'mssql';
 import dotenv from 'dotenv';
-
 dotenv.config();
 
 const config = {
@@ -10,13 +9,9 @@ const config = {
   database: process.env.DB_DATABASE,
   options: {
     encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: true,
+    trustServerCertificate: true
   },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
-  },
+  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
 };
 
 export const poolPromise = new sql.ConnectionPool(config)
@@ -26,23 +21,21 @@ export const poolPromise = new sql.ConnectionPool(config)
     return pool;
   })
   .catch(err => {
-    console.log('Database Connection Failed: ', err);
+    console.error('DB Connection Failed', err);
     throw err;
   });
 
 export async function runQuery(queryText, params = {}) {
   const pool = await poolPromise;
   const request = pool.request();
-
   for (const key in params) {
     const p = params[key];
-    if (p && typeof p === "object" && "type" in p && "value" in p) {
-      request.input(key, p.type, p.value); // correct usage
+    if (p && typeof p === 'object' && 'type' in p && 'value' in p) {
+      request.input(key, p.type, p.value);
     } else {
-      request.input(key, p); // fallback
+      request.input(key, p);
     }
   }
-
   const result = await request.query(queryText);
   return result.recordset;
 }
