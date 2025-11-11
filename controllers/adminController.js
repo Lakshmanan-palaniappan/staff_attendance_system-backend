@@ -1,71 +1,50 @@
 import sql from "mssql";
 import { runQuery } from "../db.js";
-import { io } from "../server.js";
 
-// Get pending login requests
 export async function listPendingRequests(req, res) {
   try {
-    const result = await runQuery(`
-      SELECT 
-        lr.RequestId,
-        s.StaffId,
-        s.Name,
-        s.Username,
-        s.IdCardNumber,
-        lr.RequestedAt
+    const r = await runQuery(`
+      SELECT lr.RequestId, s.StaffId, s.Name, s.Username, s.IdCardNumber, lr.Status
       FROM LoginRequests lr
       JOIN Staff s ON lr.StaffId = s.StaffId
       WHERE lr.Status = 'Pending'
-      ORDER BY lr.RequestedAt DESC
     `);
-    res.json(result);
+    res.json(r);
   } catch (err) {
-    console.error("Error fetching pending requests:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-}
-
-// Approve login request
-export async function approveRequest(req, res) {
-  try {
-    const { requestId, staffId } = req.body;
-    if (!requestId || !staffId)
-      return res.status(400).json({ error: "Missing requestId or staffId" });
-
-    await runQuery(
-      `UPDATE LoginRequests 
-       SET Status = 'Approved', ApprovedAt = GETDATE() 
-       WHERE RequestId = @requestId`,
-      { requestId: { type: sql.Int, value: parseInt(requestId, 10) } }
-    );
-
-    io.to(`staff_${staffId}`).emit("login_approved", {
-      staffId,
-      message: "Your login request has been approved!",
-    });
-
-    res.json({ message: "Request approved successfully" });
-  } catch (err) {
-    console.error("Error approving request:", err);
     res.status(500).json({ error: err.message });
   }
 }
 
-// List all staff
+export async function approveRequest(req, res) {
+  try {
+    const { requestId, staffId, action = "Approve" } = req.body;
+
+    const status = action === "Reject" ? "Rejected" : "Approved";
+
+    await runQuery(`
+      UPDATE LoginRequests
+      SET Status=@status, ApprovedAt=GETDATE()
+      WHERE RequestId=@id
+    `, {
+      id: { type: sql.Int, value: +requestId },
+      status: { type: sql.VarChar, value: status }
+    });
+
+    res.json({ message: `Request ${status}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 export async function listAllStaff(req, res) {
   try {
-    const result = await runQuery(`
-      SELECT 
-        StaffId,
-        Name,
-        Username,
-        IdCardNumber
+    const r = await runQuery(`
+      SELECT StaffId, Name, Username, IdCardNumber, IsAdmin
       FROM Staff
       ORDER BY StaffId DESC
     `);
-    res.json(result);
+    res.json(r);
   } catch (err) {
-    console.error("Error fetching staff list:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 }
