@@ -1,27 +1,73 @@
-import { StaffModel } from "../models/staffModel.js";
+// controllers/staffController.js
+import { UserLoginModel } from "../models/userLoginModel.js";
+import { AttendanceModel } from "../models/attendanceModel.js";
 
-export async function getStaffDetails(req, res) {
+/**
+ * GET /staff/me/:staffId
+ * Fetch basic staff profile
+ */
+export async function getMyProfile(req, res) {
+  const { staffId } = req.params;
+
   try {
-    const { staffId } = req.params;
-    const { usernameOrId } = req.query;
+    const rows = await UserLoginModel.getByContId(staffId);
+    if (!rows.length) return res.status(404).json({ error: "User not found" });
 
-    let staff;
+    const user = rows[0];
 
-    if (staffId) {
-      staff = await StaffModel.getById(staffId);
-    } else if (usernameOrId) {
-      staff = await StaffModel.findByUsernameOrIdCard(usernameOrId);
-    } else {
-      return res.status(400).json({ error: "Provide staffId or usernameOrId" });
-    }
+    res.json({
+      staffId: user.ContID,
+      username: user.EmpUName
+    });
 
-    if (!staff || staff.length === 0) {
-      return res.status(404).json({ error: "Staff not found" });
-    }
+  } catch (err) {
+    console.error("Profile Error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
 
-    res.json(staff[0]);
-  } catch (error) {
-    console.error("Error fetching staff details:", error);
+/**
+ * GET /staff/attendance/today/:staffId
+ */
+export async function getMyAttendanceToday(req, res) {
+  const { staffId } = req.params;
+
+  try {
+    const rows = await AttendanceModel.getTodayByStaff(staffId);
+    res.json(rows);
+  } catch (err) {
+    console.error("Attendance Today Error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/**
+ * GET /staff/attendance/all/:staffId
+ */
+export async function getMyAttendanceAll(req, res) {
+  const { staffId } = req.params;
+
+  try {
+    const rows = await AttendanceModel.getAllByStaff(staffId);
+    res.json(rows);
+  } catch (err) {
+    console.error("Attendance All Error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/**
+ * GET /staff/attendance/pairs/:staffId
+ * Returns [{ date, checkInTime, checkOutTime }]
+ */
+export async function getMyAttendancePairs(req, res) {
+  const { staffId } = req.params;
+
+  try {
+    const rows = await AttendanceModel.getCheckinCheckoutPairs(staffId);
+    res.json(rows);
+  } catch (err) {
+    console.error("Attendance Pairs Error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }

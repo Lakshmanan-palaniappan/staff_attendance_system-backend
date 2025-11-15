@@ -17,12 +17,15 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 
+// Routes
 app.use("/auth", authRoutes);
 app.use("/attendance", attendanceRoutes);
 app.use("/admin", adminRoutes);
 app.use("/staff", staffRoutes);
 
+
 const PORT = process.env.PORT || 3030;
+
 server.listen(PORT, async () => {
   await poolPromise;
   console.log(`Server running on port ${PORT}`);

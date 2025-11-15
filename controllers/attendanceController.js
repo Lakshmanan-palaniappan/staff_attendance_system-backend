@@ -1,9 +1,8 @@
 import { AttendanceModel } from "../models/attendanceModel.js";
 import { AppConfigModel } from "../models/appConfigModel.js";
 
-// Haversine formula
 function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000; 
+  const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -19,31 +18,26 @@ export async function markAttendance(req, res) {
   const { staffId, lat, lng } = req.body;
 
   try {
-    const config = await AppConfigModel.getConfig();
-    if (!config) throw new Error("AppConfig not found");
+    const cfg = await AppConfigModel.getConfig();
+    if (!cfg) return res.status(500).json({ error: "AppConfig missing" });
 
-    const distance = getDistance(lat, lng, config.CollegeLat, config.CollegeLng);
-    const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
-    const lastStatus = todayRecords.length
-      ? todayRecords[0].CheckType.toLowerCase()
-      : null;
+    const distance = getDistance(lat, lng, cfg.CollegeLat, cfg.CollegeLng);
+    const today = await AttendanceModel.getTodayByStaff(staffId);
+    const last = today.length ? today[0].CheckType.toLowerCase() : null;
 
     let newStatus;
 
-    if (!lastStatus) {
-      if (distance > config.AllowedRadiusMeters) {
+    if (!last) {
+      if (distance > cfg.AllowedRadiusMeters)
         return res.status(400).json({ error: "Cannot check in outside geofence" });
-      }
       newStatus = "checkin";
-    } else if (lastStatus === "checkin") {
-      if (distance <= config.AllowedRadiusMeters) {
+    } else if (last === "checkin") {
+      if (distance <= cfg.AllowedRadiusMeters)
         return res.status(400).json({ error: "Still inside geofence, cannot check out" });
-      }
       newStatus = "checkout";
-    } else if (lastStatus === "checkout") {
-      if (distance > config.AllowedRadiusMeters) {
+    } else {
+      if (distance > cfg.AllowedRadiusMeters)
         return res.status(400).json({ error: "Cannot check in outside geofence" });
-      }
       newStatus = "checkin";
     }
 
@@ -54,12 +48,9 @@ export async function markAttendance(req, res) {
       longitude: lng,
     });
 
-    res.json({
-      message: `Attendance marked: ${newStatus}`,
-      currentStatus: newStatus,
-    });
+    res.json({ message: `Attendance marked: ${newStatus}`, currentStatus: newStatus });
+
   } catch (err) {
-    console.error("Attendance Error:", err);
     res.status(500).json({ error: err.message });
   }
 }
@@ -68,10 +59,9 @@ export async function getTodayAttendance(req, res) {
   const { staffId } = req.params;
 
   try {
-    const records = await AttendanceModel.getTodayByStaff(staffId);
-    res.json(records);
+    const rows = await AttendanceModel.getTodayByStaff(staffId);
+    res.json(rows);
   } catch (err) {
-    console.error("Fetch Attendance Error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }
