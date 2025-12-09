@@ -7,7 +7,9 @@ import {
   getStaffAttendance,
   getTodayAttendanceForAll,
   getCheckinCheckoutPairs,
-  getTodayAttendanceStaffWise
+  getTodayAttendanceStaffWise,
+  createAppVersion,
+  
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -28,6 +30,7 @@ router.get("/attendance/:staffId", getStaffAttendance);
 router.get("/attendance/today/all", getTodayAttendanceForAll);
 router.get("/attendance/pairs/:staffId", getCheckinCheckoutPairs);
 router.get("/attendance/today/staffwise", getTodayAttendanceStaffWise);
+router.post("/app-version", createAppVersion); 
 
 
 export default router;

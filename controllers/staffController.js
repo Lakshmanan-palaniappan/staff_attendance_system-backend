@@ -17,7 +17,9 @@ export async function getMyProfile(req, res) {
 
     res.json({
       staffId: user.ContID,
-      username: user.EmpUName
+      username: user.EmpUName,
+      name: user.StaffName || user.EmpUName,       // real name if available
+      serverAppVersion: user.AppVersion || null    // ⬅️ NEW FIELD
     });
 
   } catch (err) {
@@ -25,6 +27,7 @@ export async function getMyProfile(req, res) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
 
 /**
  * GET /staff/attendance/today/:staffId

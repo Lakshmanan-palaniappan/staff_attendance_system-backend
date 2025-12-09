@@ -1,9 +1,12 @@
+// controllers/adminController.js
 import { LoginRequestModel } from "../models/loginRequestModel.js";
 import { AttendanceModel } from "../models/attendanceModel.js";
 import { AdminModel } from "../models/adminModel.js";
 import { UserLoginModel } from "../models/userLoginModel.js";
 import sql from "mssql";
 import { runQuery } from "../db.js";
+import { AppVersionModel } from "../models/appVersionModel.js";
+
 export async function listPendingRequests(req, res) {
   try {
     const data = await LoginRequestModel.getPending();
@@ -26,23 +29,38 @@ export async function approveRequest(req, res) {
   }
 }
 
-
 export async function listAllStaff(req, res) {
   try {
     const rows = await runQuery(`
       SELECT 
         u.ContID AS StaffId,
-        u.EmpUName,
+        ea.EmpName AS StaffName,
+        u.EmpUName AS Username,
+        u.AppVersion,
         (SELECT TOP 1 Timestamp 
          FROM Attendance 
-         WHERE StaffId = u.ContID AND CheckType='checkin' 
+         WHERE StaffId = u.ContID AND CheckType = 'checkin' 
          ORDER BY Timestamp DESC) AS LastCheckIn,
         (SELECT TOP 1 Timestamp 
          FROM Attendance 
-         WHERE StaffId = u.ContID AND CheckType='checkout' 
+         WHERE StaffId = u.ContID AND CheckType = 'checkout' 
          ORDER BY Timestamp DESC) AS LastCheckOut
       FROM UserLogin u
-      ORDER BY u.ContID DESC
+      OUTER APPLY (
+        SELECT TRY_CONVERT(
+                 INT,
+                 REVERSE(
+                   SUBSTRING(
+                     REVERSE(u.EmpUName),
+                     1,
+                     PATINDEX('%[^0-9]%', REVERSE(u.EmpUName) + 'X') - 1
+                   )
+                 )
+               ) AS EmpIdFromUserName
+      ) x
+      LEFT JOIN EmpAttdCheckForApp ea
+        ON ea.EmpId = x.EmpIdFromUserName
+      ORDER BY u.ContID DESC;
     `);
     res.json(rows);
   } catch (err) {
@@ -50,10 +68,7 @@ export async function listAllStaff(req, res) {
   }
 }
 
-
-// -----------------------------
 // 2. Admin: Get Full Attendance of a Staff
-// -----------------------------
 export async function getStaffAttendance(req, res) {
   const { staffId } = req.params;
 
@@ -65,26 +80,22 @@ export async function getStaffAttendance(req, res) {
   }
 }
 
-// -----------------------------
 // 3. Admin: Today Attendance For All Staff
-// -----------------------------
 export async function getTodayAttendanceForAll(req, res) {
   try {
-    const rows = await AttendanceModel.getTodayForAll();
+    const rows = await AdminModel.getTodayForAll();
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
 
-// -----------------------------
 // 4. Admin: Check-in/Check-out pairs
-// -----------------------------
 export async function getCheckinCheckoutPairs(req, res) {
   const { staffId } = req.params;
 
   try {
-    const rows = await AttendanceModel.getCheckinCheckoutPairs(staffId);
+    const rows = await AdminModel.getCheckinCheckoutPairs(staffId);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -97,5 +108,29 @@ export async function getTodayAttendanceStaffWise(req, res) {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+export async function createAppVersion(req, res) {
+  try {
+    const { versionNo } = req.body;
+
+    if (!versionNo || !String(versionNo).trim()) {
+      return res.status(400).json({ error: "versionNo is required" });
+    }
+
+    const cleanVersion = String(versionNo).trim();
+
+    await AppVersionModel.createNew(cleanVersion);
+
+    const latest = await AppVersionModel.getLatest();
+
+    res.json({
+      message: "App version updated",
+      latestVersion: latest?.version ?? cleanVersion
+    });
+  } catch (err) {
+    console.error("createAppVersion error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
