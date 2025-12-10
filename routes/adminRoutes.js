@@ -34,8 +34,8 @@ router.get("/attendance/pairs/:staffId", getCheckinCheckoutPairs);
 router.get("/attendance/today/staffwise", getTodayAttendanceStaffWise);
 router.post("/app-version", createAppVersion); 
 // example routes (adjust paths to your style)
-router.get("/admin/app-config", getAppConfig);
-router.put("/admin/app-config/radius", updateAllowedRadius);
+router.get("app-config", getAppConfig);
+router.put("app-config/radius", updateAllowedRadius);
 // or POST if you prefer
 
 
