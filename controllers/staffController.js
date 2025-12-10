@@ -19,7 +19,8 @@ export async function getMyProfile(req, res) {
       staffId: user.ContID,
       username: user.EmpUName,
       name: user.StaffName || user.EmpUName,       // real name if available
-      serverAppVersion: user.AppVersion || null    // ⬅️ NEW FIELD
+      serverAppVersion: user.AppVersion || null,    // ⬅️ NEW FIELD
+      Department: user.Dept
     });
 
   } catch (err) {

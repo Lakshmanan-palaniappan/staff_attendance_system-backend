@@ -11,7 +11,8 @@ export const UserLoginModel = {
         u.EmpUName,
         u.EmpPwd,
         u.AppVersion,            -- ⬅️ add this
-        ea.EmpName AS StaffName
+        ea.EmpName AS StaffName,
+        ea.Department as Dept
       FROM UserLogin u
       OUTER APPLY (
         SELECT TRY_CONVERT(
@@ -43,7 +44,8 @@ export const UserLoginModel = {
         u.EmpUName,
         u.EmpPwd,
         u.AppVersion,            -- ⬅️ add this
-        ea.EmpName AS StaffName
+        ea.EmpName AS StaffName,
+        ea.Department as Dept
       FROM UserLogin u
       OUTER APPLY (
         SELECT TRY_CONVERT(
