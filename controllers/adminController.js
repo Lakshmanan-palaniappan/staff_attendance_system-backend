@@ -6,6 +6,7 @@ import { UserLoginModel } from "../models/userLoginModel.js";
 import sql from "mssql";
 import { runQuery } from "../db.js";
 import { AppVersionModel } from "../models/appVersionModel.js";
+import { AppConfigModel } from "../models/appConfigModel.js";
 
 export async function listPendingRequests(req, res) {
   try {
