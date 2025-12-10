@@ -35,6 +35,7 @@ export async function listAllStaff(req, res) {
       SELECT 
         u.ContID AS StaffId,
         ea.EmpName AS StaffName,
+        ea.Department AS Department,       -- 👈 department from EmpAttdCheckForApp
         u.EmpUName AS Username,
         u.AppVersion,
         (SELECT TOP 1 Timestamp 
@@ -67,6 +68,7 @@ export async function listAllStaff(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
 
 // 2. Admin: Get Full Attendance of a Staff
 export async function getStaffAttendance(req, res) {
@@ -134,3 +136,50 @@ export async function createAppVersion(req, res) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
+export async function getAppConfig(req, res) {
+  try {
+    const config = await AppConfigModel.getConfig();
+    if (!config) {
+      return res.status(404).json({ error: "AppConfig row not found" });
+    }
+    res.json(config);
+  } catch (err) {
+    console.error("getAppConfig error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function updateAllowedRadius(req, res) {
+  try {
+    const { allowedRadiusMeters } = req.body;
+
+    if (
+      allowedRadiusMeters === undefined ||
+      allowedRadiusMeters === null ||
+      isNaN(Number(allowedRadiusMeters))
+    ) {
+      return res
+        .status(400)
+        .json({ error: "allowedRadiusMeters (number) is required" });
+    }
+
+    const radius = Number(allowedRadiusMeters);
+    if (radius <= 0) {
+      return res
+        .status(400)
+        .json({ error: "allowedRadiusMeters must be positive" });
+    }
+
+    await AppConfigModel.updateAllowedRadius(radius);
+
+    res.json({
+      message: "Allowed radius updated",
+      allowedRadiusMeters: radius
+    });
+  } catch (err) {
+    console.error("updateAllowedRadius error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+

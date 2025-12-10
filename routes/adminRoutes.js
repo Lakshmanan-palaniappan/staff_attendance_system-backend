@@ -9,6 +9,8 @@ import {
   getCheckinCheckoutPairs,
   getTodayAttendanceStaffWise,
   createAppVersion,
+  getAppConfig,
+  updateAllowedRadius
   
 } from "../controllers/adminController.js";
 
@@ -31,6 +33,11 @@ router.get("/attendance/today/all", getTodayAttendanceForAll);
 router.get("/attendance/pairs/:staffId", getCheckinCheckoutPairs);
 router.get("/attendance/today/staffwise", getTodayAttendanceStaffWise);
 router.post("/app-version", createAppVersion); 
+// example routes (adjust paths to your style)
+router.get("/admin/app-config", getAppConfig);
+router.put("/admin/app-config/radius", updateAllowedRadius);
+// or POST if you prefer
+
 
 
 export default router;

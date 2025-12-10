@@ -4,9 +4,9 @@ import { runQuery } from "../db.js";
 import { AttendanceModel } from "../models/attendanceModel.js";
 import { AppConfigModel } from "../models/appConfigModel.js";
 
-// 15-minute cooldown after checkout
-const CHECKIN_COOLDOWN_MINUTES = 15;
-
+// --------------------------------------------------
+// Helpers
+// --------------------------------------------------
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -64,26 +64,9 @@ async function getEmpStatusForStaff(staffId) {
   };
 }
 
-// Get minutes since last CHECKOUT using SQL DATEDIFF (DB time)
-async function getMinutesSinceLastCheckout(staffId) {
-  const rows = await runQuery(
-    `
-    SELECT TOP 1
-      DATEDIFF(MINUTE, Timestamp, GETDATE()) AS DiffMinutes
-    FROM Attendance
-    WHERE StaffId = @id AND CheckType = 'checkout'
-    ORDER BY Timestamp DESC
-    `,
-    { id: { type: sql.Int, value: parseInt(staffId) } }
-  );
-
-  if (!rows.length || rows[0].DiffMinutes == null) {
-    return null; // no checkout yet
-  }
-
-  return Number(rows[0].DiffMinutes);
-}
-
+// --------------------------------------------------
+// Controllers
+// --------------------------------------------------
 export async function markAttendance(req, res) {
   const { staffId, lat, lng } = req.body;
 
@@ -119,6 +102,8 @@ export async function markAttendance(req, res) {
       const lastAnyRows = await AttendanceModel.getLastByStaff(staffId);
       const lastAny = lastAnyRows.length ? lastAnyRows[0] : null;
 
+      // If last record (any day) was CHECKIN and it belongs to a previous day,
+      // ensure previous day's work (EmpAttdCheckForApp) is completed.
       if (lastAny && String(lastAny.CheckType).toLowerCase() === "checkin") {
         const lastTs = new Date(lastAny.Timestamp);
         const lastDate = dateOnly(lastTs);
@@ -220,6 +205,19 @@ export async function markAttendance(req, res) {
         });
       }
 
+      // ✅ Checkout also must be inside geofence
+      const distanceCheckout = getDistance(
+        lat,
+        lng,
+        cfg.CollegeLat,
+        cfg.CollegeLng
+      );
+      if (distanceCheckout > cfg.AllowedRadiusMeters) {
+        return res
+          .status(400)
+          .json({ error: "Cannot checkout outside geofence" });
+      }
+
       await AttendanceModel.markAttendance({
         staffId,
         checkType: "checkout",
@@ -234,56 +232,14 @@ export async function markAttendance(req, res) {
       });
     }
 
-    // ------------------------ NEXT CHECK-IN (SAME DAY, AFTER CHECKOUT) ----------------------
+    // ------------------------ ALREADY CHECKED OUT TODAY ----------------------
     if (lastType === "checkout") {
-      // Use DB DATEDIFF to avoid JS timezone issues
-      let diffMinutes = await getMinutesSinceLastCheckout(staffId);
-
-      if (diffMinutes == null) {
-        // no checkout found → treat as cooldown passed
-        diffMinutes = CHECKIN_COOLDOWN_MINUTES + 1;
-      }
-
-      if (diffMinutes < 0) {
-        // DB time in future? just treat as cooldown passed
-        diffMinutes = CHECKIN_COOLDOWN_MINUTES + 1;
-      }
-
-      if (diffMinutes < CHECKIN_COOLDOWN_MINUTES) {
-        const minutesLeft = Math.max(
-          1,
-          CHECKIN_COOLDOWN_MINUTES - Math.floor(diffMinutes)
-        );
-
-        const empStatus = await getEmpStatusForStaff(staffId);
-
-        return res.status(400).json({
-          error: `You have recently checked out. You can check in again after ${minutesLeft} minute(s).`,
-          cooldownMinutesLeft: minutesLeft,
-          empStatus: empStatus || null,
-        });
-      }
-
-      // cooldown passed -> normal check-in with geofence
-      const distance = getDistance(lat, lng, cfg.CollegeLat, cfg.CollegeLng);
-      if (distance > cfg.AllowedRadiusMeters) {
-        return res
-          .status(400)
-          .json({ error: "Cannot check in outside geofence" });
-      }
-
-      await AttendanceModel.markAttendance({
-        staffId,
-        checkType: "checkin",
-        latitude: lat,
-        longitude: lng,
-      });
-
+      // Once checked out for this day, no further check-ins allowed today.
       const empStatus = await getEmpStatusForStaff(staffId);
 
-      return res.json({
-        message: "Attendance marked: checkin",
-        currentStatus: "checkin",
+      return res.status(400).json({
+        error:
+          "You have already checked out for today. Further check-ins are not allowed.",
         empStatus: empStatus || null,
       });
     }
