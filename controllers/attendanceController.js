@@ -4,6 +4,8 @@ import { runQuery } from "../db.js";
 import { AttendanceModel } from "../models/attendanceModel.js";
 import { AppConfigModel } from "../models/appConfigModel.js";
 
+const COOLDOWN_SECONDS = 5 * 60; // 5 minutes
+
 // --------------------------------------------------
 // Helpers
 // --------------------------------------------------
@@ -169,68 +171,89 @@ export async function markAttendance(req, res) {
 
     // ------------------------ CHECK-OUT (SAME DAY ONLY) ----------------------
     if (lastType === "checkin") {
-      const checkinTs = new Date(lastToday.Timestamp);
-      const checkinDate = dateOnly(checkinTs);
+  const checkinTs = new Date(lastToday.Timestamp);
+  const checkinDate = dateOnly(checkinTs);
 
-      // checkout cannot be done after midnight for that check-in
-      if (checkinDate < todayDate) {
-        return res.status(400).json({
-          error:
-            "Checkout window for that day is closed. Please contact admin.",
-        });
-      }
+  // ⛔ 5-MINUTE COOLDOWN (NEW)
+  const nowTs = new Date();
+  const diffSeconds =
+    (nowTs.getTime() - checkinTs.getTime()) / 1000;
 
-      const empStatus = await getEmpStatusForStaff(staffId);
-      if (!empStatus) {
-        return res.status(400).json({
-          error:
-            "Cannot checkout. Employee status is not configured in EmpAttdCheckForApp.",
-        });
-      }
+  if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
+    return res.status(429).json({
+      error: "Checkout is locked for 5 minutes after check-in.",
+      cooldown: {
+        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+        secondsElapsed: Math.floor(diffSeconds),
+        secondsRemaining: Math.ceil(
+          CHECKOUT_COOLDOWN_SECONDS - diffSeconds
+        ),
+      },
+      message:
+        "Please wait 5 minutes after check-in before checking out.",
+    });
+  }
 
-      const pending = [];
-      if (!empStatus.attdCompleted)
-        pending.push("Attendance not completed");
-      if (!empStatus.semPlanCompleted)
-        pending.push("Semester plan not completed");
+  // checkout cannot be done after midnight for that check-in
+  if (checkinDate < todayDate) {
+    return res.status(400).json({
+      error:
+        "Checkout window for that day is closed. Please contact admin.",
+    });
+  }
 
-      if (pending.length > 0) {
-        return res.status(400).json({
-          error:
-            pending.length === 1
-              ? `Cannot checkout, pending: ${pending[0]}.`
-              : `Cannot checkout, pending: ${pending.join(" & ")}.`,
-          pendingTasks: pending,
-          empStatus,
-        });
-      }
+  const empStatus = await getEmpStatusForStaff(staffId);
+  if (!empStatus) {
+    return res.status(400).json({
+      error:
+        "Cannot checkout. Employee status is not configured in EmpAttdCheckForApp.",
+    });
+  }
 
-      // ✅ Checkout also must be inside geofence
-      const distanceCheckout = getDistance(
-        lat,
-        lng,
-        cfg.CollegeLat,
-        cfg.CollegeLng
-      );
-      if (distanceCheckout > cfg.AllowedRadiusMeters) {
-        return res
-          .status(400)
-          .json({ error: "Cannot checkout outside geofence" });
-      }
+  const pending = [];
+  if (!empStatus.attdCompleted)
+    pending.push("Attendance not completed");
+  if (!empStatus.semPlanCompleted)
+    pending.push("Semester plan not completed");
 
-      await AttendanceModel.markAttendance({
-        staffId,
-        checkType: "checkout",
-        latitude: lat,
-        longitude: lng,
-      });
+  if (pending.length > 0) {
+    return res.status(400).json({
+      error:
+        pending.length === 1
+          ? `Cannot checkout, pending: ${pending[0]}.`
+          : `Cannot checkout, pending: ${pending.join(" & ")}.`,
+      pendingTasks: pending,
+      empStatus,
+    });
+  }
 
-      return res.json({
-        message: "Attendance marked: checkout",
-        currentStatus: "checkout",
-        empStatus,
-      });
-    }
+  // ✅ Checkout also must be inside geofence
+  const distanceCheckout = getDistance(
+    lat,
+    lng,
+    cfg.CollegeLat,
+    cfg.CollegeLng
+  );
+  if (distanceCheckout > cfg.AllowedRadiusMeters) {
+    return res
+      .status(400)
+      .json({ error: "Cannot checkout outside geofence" });
+  }
+
+  await AttendanceModel.markAttendance({
+    staffId,
+    checkType: "checkout",
+    latitude: lat,
+    longitude: lng,
+  });
+
+  return res.json({
+    message: "Attendance marked: checkout",
+    currentStatus: "checkout",
+    empStatus,
+  });
+}
+
 
     // ------------------------ ALREADY CHECKED OUT TODAY ----------------------
     if (lastType === "checkout") {
