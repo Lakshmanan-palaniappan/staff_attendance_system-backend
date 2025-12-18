@@ -176,23 +176,47 @@ export async function markAttendance(req, res) {
 
   // ⛔ 5-MINUTE COOLDOWN (NEW)
   const nowTs = new Date();
-  const diffSeconds =
-    (nowTs.getTime() - checkinTs.getTime()) / 1000;
 
-  if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
-    return res.status(429).json({
-      error: "Checkout is locked for 5 minutes after check-in.",
-      cooldown: {
-        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-        secondsElapsed: Math.floor(diffSeconds),
-        secondsRemaining: Math.ceil(
-          CHECKOUT_COOLDOWN_SECONDS - diffSeconds
-        ),
-      },
-      message:
-        "Please wait 5 minutes after check-in before checking out.",
-    });
-  }
+// raw diff
+let diffSeconds =
+  (nowTs.getTime() - checkinTs.getTime()) / 1000;
+
+// 🔒 clamp negative values (timezone safety)
+diffSeconds = Math.max(0, diffSeconds);
+
+// remaining time
+let remainingSeconds = Math.max(
+  0,
+  CHECKOUT_COOLDOWN_SECONDS - diffSeconds
+);
+
+// 🔒 never exceed cooldown
+remainingSeconds = Math.min(
+  CHECKOUT_COOLDOWN_SECONDS,
+  remainingSeconds
+);
+
+const minutesLeft = Math.floor(remainingSeconds / 60);
+const secondsLeft = Math.ceil(remainingSeconds % 60);
+
+if (remainingSeconds > 0) {
+  // ✅ console log
+  console.log(
+    `[CHECKOUT COOLDOWN] Staff ${staffId} | Remaining: ${minutesLeft} min ${secondsLeft} sec`
+  );
+
+  return res.status(429).json({
+    error: `Checkout locked. Wait ${minutesLeft} min ${secondsLeft} sec.`,
+    cooldown: {
+      totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+      secondsRemaining: Math.ceil(remainingSeconds),
+      minutesRemaining: minutesLeft,
+    },
+    message:
+      `Please wait ${minutesLeft} min ${secondsLeft} sec before checking out.`,
+  });
+}
+
 
   // checkout cannot be done after midnight for that check-in
   if (checkinDate < todayDate) {
