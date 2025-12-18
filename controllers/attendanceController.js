@@ -171,54 +171,53 @@ export async function markAttendance(req, res) {
 
     // ------------------------ CHECK-OUT (SAME DAY ONLY) ----------------------
     if (lastType === "checkin") {
-  const checkinTs = new Date(lastToday.Timestamp);
+  // ✅ Treat DB timestamp as LOCAL time (important)
+  const checkinTs = new Date(
+    lastToday.Timestamp.toString().replace("Z", "")
+  );
   const checkinDate = dateOnly(checkinTs);
 
-  // ⛔ 5-MINUTE COOLDOWN (NEW)
   const nowTs = new Date();
 
-// raw diff
-let diffSeconds =
-  (nowTs.getTime() - checkinTs.getTime()) / 1000;
+  // ⛔ Cooldown calculation (FIXED)
+  let diffSeconds =
+    (nowTs.getTime() - checkinTs.getTime()) / 1000;
 
-// 🔒 clamp negative values (timezone safety)
-diffSeconds = Math.max(0, diffSeconds);
+  // 🔒 Protect against future timestamps
+  diffSeconds = Math.max(0, diffSeconds);
 
-// remaining time
-let remainingSeconds = Math.max(
-  0,
-  CHECKOUT_COOLDOWN_SECONDS - diffSeconds
-);
-
-// 🔒 never exceed cooldown
-remainingSeconds = Math.min(
-  CHECKOUT_COOLDOWN_SECONDS,
-  remainingSeconds
-);
-
-const minutesLeft = Math.floor(remainingSeconds / 60);
-const secondsLeft = Math.ceil(remainingSeconds % 60);
-
-if (remainingSeconds > 0) {
-  // ✅ console log
-  console.log(
-    `[CHECKOUT COOLDOWN] Staff ${staffId} | Remaining: ${minutesLeft} min ${secondsLeft} sec`
+  let remainingSeconds = Math.max(
+    0,
+    CHECKOUT_COOLDOWN_SECONDS - diffSeconds
   );
 
-  return res.status(429).json({
-    error: `Checkout locked. Wait ${minutesLeft} min ${secondsLeft} sec.`,
-    cooldown: {
-      totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-      secondsRemaining: Math.ceil(remainingSeconds),
-      minutesRemaining: minutesLeft,
-    },
-    message:
-      `Please wait ${minutesLeft} min ${secondsLeft} sec before checking out.`,
-  });
-}
+  // 🔒 Never exceed total cooldown
+  remainingSeconds = Math.min(
+    CHECKOUT_COOLDOWN_SECONDS,
+    remainingSeconds
+  );
 
+  const minutesLeft = Math.floor(remainingSeconds / 60);
+  const secondsLeft = Math.ceil(remainingSeconds % 60);
 
-  // checkout cannot be done after midnight for that check-in
+  if (remainingSeconds > 0) {
+    console.log(
+      `[CHECKOUT COOLDOWN] Staff ${staffId} | Remaining: ${minutesLeft} min ${secondsLeft} sec`
+    );
+
+    return res.status(429).json({
+      error: `Checkout locked. Wait ${minutesLeft} min ${secondsLeft} sec.`,
+      cooldown: {
+        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+        secondsRemaining: Math.ceil(remainingSeconds),
+        minutesRemaining: minutesLeft,
+      },
+      message:
+        `Please wait ${minutesLeft} min ${secondsLeft} sec before checking out.`,
+    });
+  }
+
+  // ❌ checkout cannot be done after midnight
   if (checkinDate < todayDate) {
     return res.status(400).json({
       error:
@@ -251,7 +250,7 @@ if (remainingSeconds > 0) {
     });
   }
 
-  // ✅ Checkout also must be inside geofence
+  // ✅ Checkout must be inside geofence
   const distanceCheckout = getDistance(
     lat,
     lng,
@@ -277,6 +276,7 @@ if (remainingSeconds > 0) {
     empStatus,
   });
 }
+
 
 
     // ------------------------ ALREADY CHECKED OUT TODAY ----------------------
