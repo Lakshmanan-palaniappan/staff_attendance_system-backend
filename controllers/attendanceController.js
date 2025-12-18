@@ -171,35 +171,21 @@ export async function markAttendance(req, res) {
 
     // ------------------------ CHECK-OUT (SAME DAY ONLY) ----------------------
     if (lastType === "checkin") {
-  // ✅ Treat DB timestamp as LOCAL time (important)
-  const checkinTs = new Date(
-    lastToday.Timestamp.toString().replace("Z", "")
+  // ✅ Use SQL-calculated elapsed time (authoritative)
+  const diffSeconds = Math.max(
+    0,
+    Number(lastToday.SecondsSinceCheckin || 0)
   );
-  const checkinDate = dateOnly(checkinTs);
 
-  const nowTs = new Date();
-
-  // ⛔ Cooldown calculation (FIXED)
-  let diffSeconds =
-    (nowTs.getTime() - checkinTs.getTime()) / 1000;
-
-  // 🔒 Protect against future timestamps
-  diffSeconds = Math.max(0, diffSeconds);
-
-  let remainingSeconds = Math.max(
+  const remainingSeconds = Math.max(
     0,
     CHECKOUT_COOLDOWN_SECONDS - diffSeconds
   );
 
-  // 🔒 Never exceed total cooldown
-  remainingSeconds = Math.min(
-    CHECKOUT_COOLDOWN_SECONDS,
-    remainingSeconds
-  );
-
   const minutesLeft = Math.floor(remainingSeconds / 60);
-  const secondsLeft = Math.ceil(remainingSeconds % 60);
+  const secondsLeft = remainingSeconds % 60;
 
+  // ⛔ Cooldown active
   if (remainingSeconds > 0) {
     console.log(
       `[CHECKOUT COOLDOWN] Staff ${staffId} | Remaining: ${minutesLeft} min ${secondsLeft} sec`
@@ -209,7 +195,7 @@ export async function markAttendance(req, res) {
       error: `Checkout locked. Wait ${minutesLeft} min ${secondsLeft} sec.`,
       cooldown: {
         totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-        secondsRemaining: Math.ceil(remainingSeconds),
+        secondsRemaining: remainingSeconds,
         minutesRemaining: minutesLeft,
       },
       message:
@@ -218,6 +204,7 @@ export async function markAttendance(req, res) {
   }
 
   // ❌ checkout cannot be done after midnight
+  const checkinDate = dateOnly(new Date(lastToday.Timestamp));
   if (checkinDate < todayDate) {
     return res.status(400).json({
       error:
