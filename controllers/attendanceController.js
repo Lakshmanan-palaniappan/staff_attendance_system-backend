@@ -4,7 +4,7 @@ import { runQuery } from "../db.js";
 import { AttendanceModel } from "../models/attendanceModel.js";
 import { AppConfigModel } from "../models/appConfigModel.js";
 
-const COOLDOWN_SECONDS = 5 * 60; // 5 minutes
+const CHECKOUT_COOLDOWN_SECONDS = 5 * 60; // 5 minutes
 
 // --------------------------------------------------
 // Helpers
