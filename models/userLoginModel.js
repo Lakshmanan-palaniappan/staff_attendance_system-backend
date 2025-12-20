@@ -10,21 +10,23 @@ export const UserLoginModel = {
         u.ContID,
         u.EmpUName,
         u.EmpPwd,
-        u.AppVersion,            -- ⬅️ add this
+        u.AppVersion,
+        ISNULL(u.DeviceCount, 0) AS DeviceCount,
+        u.LastDeviceLoginAt,
         ea.EmpName AS StaffName,
-        ea.Department as Dept
+        ea.Department AS Dept
       FROM UserLogin u
       OUTER APPLY (
         SELECT TRY_CONVERT(
-                 INT,
-                 REVERSE(
-                   SUBSTRING(
-                     REVERSE(u.EmpUName),
-                     1,
-                     PATINDEX('%[^0-9]%', REVERSE(u.EmpUName) + 'X') - 1
-                   )
-                 )
-               ) AS EmpIdFromUserName
+          INT,
+          REVERSE(
+            SUBSTRING(
+              REVERSE(u.EmpUName),
+              1,
+              PATINDEX('%[^0-9]%', REVERSE(u.EmpUName) + 'X') - 1
+            )
+          )
+        ) AS EmpIdFromUserName
       ) x
       LEFT JOIN EmpAttdCheckForApp ea
         ON ea.EmpId = x.EmpIdFromUserName
@@ -33,6 +35,30 @@ export const UserLoginModel = {
         LOWER(REPLACE(@username, ' ', ''))
       `,
       { username: { type: sql.VarChar, value: username.trim() } }
+    );
+  },
+
+  async incrementDeviceCount(contId) {
+    return await runQuery(
+      `
+      UPDATE UserLogin
+      SET 
+        DeviceCount = ISNULL(DeviceCount, 0) + 1,
+        LastDeviceLoginAt = GETDATE()
+      WHERE ContID = @id
+      `,
+      { id: { type: sql.BigInt, value: Number(contId) } }
+    );
+  },
+
+  async resetDeviceCount(contId) {
+    return await runQuery(
+      `
+      UPDATE UserLogin
+      SET DeviceCount = 0
+      WHERE ContID = @id
+      `,
+      { id: { type: sql.BigInt, value: Number(contId) } }
     );
   },
 

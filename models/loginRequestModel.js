@@ -54,7 +54,16 @@ export const LoginRequestModel = {
   },
 
   async approve(requestId, status) {
-    return await runQuery(
+    const rows = await runQuery(
+      `SELECT StaffId FROM LoginRequests WHERE RequestId=@id`,
+      { id: { type: sql.Int, value: requestId } }
+    );
+
+    if (!rows.length) return;
+
+    const staffId = rows[0].StaffId;
+
+    await runQuery(
       `
       UPDATE LoginRequests
       SET Status=@s, ApprovedAt=GETDATE()
@@ -65,5 +74,10 @@ export const LoginRequestModel = {
         s: { type: sql.VarChar, value: status }
       }
     );
+
+    // ✅ Increment device count ONLY when approved
+    if (status === "Approved") {
+      await UserLoginModel.incrementDeviceCount(staffId);
+    }
   }
 };

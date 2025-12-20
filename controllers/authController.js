@@ -55,6 +55,16 @@ export async function loginRequest(req, res) {
         .json({ error: "Invalid username or password" });
     }
 
+    // 🚫 SINGLE DEVICE ENFORCEMENT
+if (user.DeviceCount >= 1) {
+  return res.status(409).json({
+    errorCode: "DEVICE_LIMIT_REACHED",
+    message:
+      "Your account is already active on another device. Please logout from the other device."
+  });
+}
+
+
     // 3️⃣ Save staff's app version
     await UserLoginModel.updateAppVersion(user.ContID, clientVersion);
 
@@ -98,6 +108,24 @@ export async function checkLoginStatus(req, res) {
 
     return res.json({ status: rows[0].Status });
   } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function getDeviceCount(req, res) {
+  const { staffId } = req.params;
+
+  try {
+    const rows = await UserLoginModel.getByContId(staffId);
+    if (!rows.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.json({
+      deviceCount: rows[0].DeviceCount ?? 0
+    });
+  } catch (err) {
+    console.error("Device count check error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 }
