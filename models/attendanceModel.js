@@ -95,5 +95,68 @@ ORDER BY [Timestamp] DESC
       `,
       { id: { type: sql.Int, value: parseInt(staffId) } }
     );
-  }
+  },
+
+  // models/attendanceModel.js
+
+async insertCheckinOnce({ staffId, latitude, longitude }) {
+  const result = await runQuery(
+    `
+    IF EXISTS (
+      SELECT 1 FROM Attendance
+      WHERE StaffId = @staffId
+        AND CheckType = 'checkin'
+        AND CONVERT(date, Timestamp) = CONVERT(date, GETDATE())
+    )
+    BEGIN
+      SELECT 1 AS AlreadyCheckedIn;
+      RETURN;
+    END
+
+    INSERT INTO Attendance (StaffId, CheckType, Latitude, Longitude)
+    VALUES (@staffId, 'checkin', @lat, @lng);
+
+    SELECT 0 AS AlreadyCheckedIn;
+    `,
+    {
+      staffId: { type: sql.Int, value: staffId },
+      lat: { type: sql.Float, value: latitude },
+      lng: { type: sql.Float, value: longitude },
+    }
+  );
+
+  return result?.[0] ?? { AlreadyCheckedIn: 0 };
+},
+
+async upsertCheckout({ staffId, latitude, longitude }) {
+  return runQuery(
+    `
+    UPDATE Attendance
+    SET Timestamp = GETDATE(),
+        Latitude = @lat,
+        Longitude = @lng
+    WHERE AttendanceId = (
+      SELECT TOP 1 AttendanceId
+      FROM Attendance
+      WHERE StaffId = @staffId
+        AND CheckType = 'checkout'
+        AND CONVERT(date, Timestamp) = CONVERT(date, GETDATE())
+      ORDER BY Timestamp DESC
+    );
+
+    IF @@ROWCOUNT = 0
+    BEGIN
+      INSERT INTO Attendance (StaffId, CheckType, Latitude, Longitude)
+      VALUES (@staffId, 'checkout', @lat, @lng)
+    END
+    `,
+    {
+      staffId: { type: sql.Int, value: staffId },
+      lat: { type: sql.Float, value: latitude },
+      lng: { type: sql.Float, value: longitude }
+    }
+  );
+}
+
+
 };

@@ -87,6 +87,221 @@ export async function markAttendance(req, res) {
 
     const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
 
+    // Latest record today (authoritative)
+    const lastToday = todayRecords.length
+      ? todayRecords.reduce((latest, row) => {
+          if (!latest) return row;
+          return new Date(row.Timestamp) > new Date(latest.Timestamp)
+            ? row
+            : latest;
+        }, null)
+      : null;
+
+    /* =========================================================
+       CASE 1: NO RECORD TODAY → FIRST CHECK-IN ONLY
+    ========================================================= */
+    if (!lastToday) {
+      const lastAnyRows = await AttendanceModel.getLastByStaff(staffId);
+      const lastAny = lastAnyRows.length ? lastAnyRows[0] : null;
+
+      // Previous day left open → validate EmpAttdCheckForApp
+      if (lastAny && lastAny.CheckType?.toLowerCase() === "checkin") {
+        const lastDate = dateOnly(new Date(lastAny.Timestamp));
+
+        if (lastDate < todayDate) {
+          const empStatus = await getEmpStatusForStaff(staffId);
+
+          const pending = [];
+          if (!empStatus) pending.push("Employee status not configured");
+          else {
+            if (!empStatus.attdCompleted)
+              pending.push("Attendance not completed");
+            if (!empStatus.semPlanCompleted)
+              pending.push("Semester plan not completed");
+          }
+
+          if (pending.length > 0) {
+            return res.status(400).json({
+              error:
+                "Cannot check in. Previous day's work pending: " +
+                pending.join(", "),
+              pendingTasks: pending,
+              empStatus: empStatus || null,
+            });
+          }
+        }
+      }
+
+      // Geofence check for CHECK-IN
+      const distance = getDistance(
+        lat,
+        lng,
+        cfg.CollegeLat,
+        cfg.CollegeLng
+      );
+      if (distance > cfg.AllowedRadiusMeters) {
+        return res
+          .status(400)
+          .json({ error: "Cannot check in outside geofence" });
+      }
+
+      // ✅ INSERT ONLY IF NOT EXISTS (first check-in preserved)
+      const checkinResult = await AttendanceModel.insertCheckinOnce({
+  staffId,
+  latitude: lat,
+  longitude: lng,
+});
+
+const alreadyCheckedIn = checkinResult.AlreadyCheckedIn === 1;
+
+const empStatus = await getEmpStatusForStaff(staffId);
+
+return res.json({
+  success: true,
+  message: alreadyCheckedIn
+    ? "You are already checked in for today."
+    : "Attendance marked: checkin",
+  currentStatus: "checkin",
+  alreadyCheckedIn,
+  empStatus: empStatus || null,
+});
+
+    }
+
+    /* =========================================================
+       CASE 2: RECORD EXISTS TODAY
+    ========================================================= */
+    const lastType = lastToday.CheckType?.toLowerCase();
+
+    /* ---------------- CHECKOUT FLOW ---------------- */
+    if (lastType === "checkin") {
+      const diffSeconds = Math.max(
+        0,
+        Number(lastToday.SecondsSinceCheckin || 0)
+      );
+
+      const remainingSeconds =
+        CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
+
+      if (remainingSeconds > 0) {
+        return res.status(429).json({
+          error: `Checkout locked. Wait ${Math.floor(
+            remainingSeconds / 60
+          )} min ${remainingSeconds % 60} sec.`,
+          cooldown: {
+            totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+            secondsRemaining: remainingSeconds,
+          },
+        });
+      }
+
+      // Midnight guard
+      if (dateOnly(new Date(lastToday.Timestamp)) < todayDate) {
+        return res.status(400).json({
+          error:
+            "Checkout window for that day is closed. Please contact admin.",
+        });
+      }
+
+      const empStatus = await getEmpStatusForStaff(staffId);
+      if (!empStatus) {
+        return res.status(400).json({
+          error:
+            "Cannot checkout. Employee status not configured.",
+        });
+      }
+
+      const pending = [];
+      if (!empStatus.attdCompleted)
+        pending.push("Attendance not completed");
+      if (!empStatus.semPlanCompleted)
+        pending.push("Semester plan not completed");
+
+      if (pending.length > 0) {
+        return res.status(400).json({
+          error: `Cannot checkout, pending: ${pending.join(" & ")}.`,
+          pendingTasks: pending,
+          empStatus,
+        });
+      }
+
+      // Geofence check for CHECKOUT
+      const distanceCheckout = getDistance(
+        lat,
+        lng,
+        cfg.CollegeLat,
+        cfg.CollegeLng
+      );
+      if (distanceCheckout > cfg.AllowedRadiusMeters) {
+        return res
+          .status(400)
+          .json({ error: "Cannot checkout outside geofence" });
+      }
+
+      // ✅ UPDATE LAST CHECKOUT OR INSERT IF NONE
+      await AttendanceModel.upsertCheckout({
+        staffId,
+        latitude: lat,
+        longitude: lng,
+      });
+
+      return res.json({
+        success: true,
+        message: "Attendance marked: checkout",
+        currentStatus: "checkout",
+        empStatus,
+      });
+    }
+
+    /* ---------------- ALREADY CHECKED OUT ---------------- */
+    if (lastType === "checkout") {
+      const empStatus = await getEmpStatusForStaff(staffId);
+      return res.status(400).json({
+        error:
+          "You have already checked out for today. Further check-ins are not allowed.",
+        empStatus: empStatus || null,
+      });
+    }
+
+    return res.status(400).json({
+      error: "Invalid attendance state",
+    });
+  } catch (err) {
+    console.error("markAttendance error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+
+export async function getTodayAttendance(req, res) {
+  const { staffId } = req.params;
+
+  try {
+    const rows = await AttendanceModel.getTodayByStaff(staffId);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/*export async function markAttendance(req, res) {
+  const { staffId, lat, lng } = req.body;
+
+  if (!staffId) {
+    return res.status(400).json({ error: "staffId is required" });
+  }
+
+  try {
+    const cfg = await AppConfigModel.getConfig();
+    if (!cfg) {
+      return res.status(500).json({ error: "AppConfig missing" });
+    }
+
+    const now = new Date();
+    const todayDate = dateOnly(now);
+
+    const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
+
     // Pick LATEST row by Timestamp, regardless of SQL ordering
     const lastToday = todayRecords.length
       ? todayRecords.reduce((latest, row) => {
@@ -286,15 +501,7 @@ export async function markAttendance(req, res) {
     console.error("markAttendance error:", err);
     res.status(500).json({ error: err.message });
   }
-}
+}*/
 
-export async function getTodayAttendance(req, res) {
-  const { staffId } = req.params;
 
-  try {
-    const rows = await AttendanceModel.getTodayByStaff(staffId);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-}
+
