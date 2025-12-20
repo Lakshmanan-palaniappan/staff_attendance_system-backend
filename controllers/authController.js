@@ -58,9 +58,10 @@ export async function loginRequest(req, res) {
     // 🚫 SINGLE DEVICE ENFORCEMENT
 if (user.DeviceCount >= 1) {
   return res.status(409).json({
-    errorCode: "DEVICE_LIMIT_REACHED",
-    message:
-      "Your account is already active on another device. Please logout from the other device."
+    errorCode: "Already Logged In on Another Device",
+    error:
+      "Your account is already active on another device.\n\n" +
+      "Please logout from the other device and try again."
   });
 }
 
