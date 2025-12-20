@@ -33,14 +33,20 @@ export async function loginRequest(req, res) {
     const latestVersion = String(latest.version).trim();
 
     if (clientVersion !== latestVersion) {
-      // 426 = Upgrade Required
-      return res.status(426).json({
-        error: "Outdated app version",
-        errorCode: "OUTDATED_APP",
-        latestVersion,
-        message: `Please update your app to version ${latestVersion} to continue.`
-      });
-    }
+
+  // 🔴 RESET DEVICE COUNT IF USER EXISTS
+  const rows = await UserLoginModel.findByEmpUName(usernameOrId);
+  if (rows.length) {
+    await UserLoginModel.resetDeviceCount(rows[0].ContID);
+  }
+
+  return res.status(426).json({
+    errorCode: "OUTDATED_APP",
+    latestVersion,
+    message: `Please update your app to version ${latestVersion} to continue.`
+  });
+}
+
 
     // 2️⃣ Existing login logic
     const rows = await UserLoginModel.findByEmpUName(usernameOrId);
