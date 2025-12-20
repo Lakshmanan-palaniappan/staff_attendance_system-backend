@@ -1,7 +1,7 @@
 // models/loginRequestModel.js
 import sql from "mssql";
 import { runQuery } from "../db.js";
-
+import { UserLoginModel } from "./userLoginModel.js";
 export const LoginRequestModel = {
   async create(staffId) {
     return await runQuery(
