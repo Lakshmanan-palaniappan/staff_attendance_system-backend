@@ -21,13 +21,6 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-function getCooldownSeconds(checkinTimestamp) {
-  const diffSeconds = Math.floor(
-    (Date.now() - new Date(checkinTimestamp).getTime()) / 1000
-  );
-  return Math.max(0, CHECKOUT_COOLDOWN_SECONDS - diffSeconds);
-}
-
 
 function dateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -189,8 +182,8 @@ const diffSeconds = Math.floor(
 );
 
 
-      const remainingSeconds = getCooldownSeconds(lastToday.Timestamp);
-
+      const remainingSeconds =
+        CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
 
       if (remainingSeconds > 0) {
         return res.status(429).json({
@@ -264,40 +257,38 @@ const diffSeconds = Math.floor(
 
     /* ---------------- ALREADY CHECKED OUT ---------------- */
     if (lastType === "checkout") {
-  // 🔥 Find LAST CHECK-IN of today (cooldown anchor)
+  // 🔥 Find the LAST CHECK-IN today
   const lastCheckin = todayRecords
     .filter(r => r.CheckType?.toLowerCase() === "checkin")
     .sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))[0];
 
   if (!lastCheckin) {
     return res.status(400).json({
-      error: "Invalid state: checkout exists without check-in.",
+      error: "No check-in found for checkout.",
     });
   }
 
-  // 🔥 Cooldown calculation (SECONDS — backend authoritative)
+  const checkinTs = new Date(lastCheckin.Timestamp);
   const diffSeconds = Math.floor(
-    (Date.now() - new Date(lastCheckin.Timestamp).getTime()) / 1000
+    (Date.now() - checkinTs.getTime()) / 1000
   );
 
-  const remainingSeconds = Math.max(
-    0,
-    CHECKOUT_COOLDOWN_SECONDS - diffSeconds
-  );
+  const remainingSeconds =
+    CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
 
-  // 🔒 Still under cooldown → BLOCK
   if (remainingSeconds > 0) {
     return res.status(429).json({
-      error: "Checkout locked",
+      error: `Checkout locked. Wait ${Math.floor(
+        remainingSeconds / 60
+      )} min ${remainingSeconds % 60} sec.`,
       cooldown: {
         totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
         secondsRemaining: remainingSeconds,
       },
-      currentStatus: "checkout",
     });
   }
 
-  // ✅ Cooldown passed → UPDATE checkout timestamp
+  // 🔥 Allow checkout update
   await AttendanceModel.upsertCheckout({
     staffId,
     latitude: lat,
@@ -310,10 +301,9 @@ const diffSeconds = Math.floor(
     success: true,
     message: "Attendance marked: checkout",
     currentStatus: "checkout",
-    empStatus: empStatus || null,
+    empStatus,
   });
 }
-
 
 
 
