@@ -23,11 +23,16 @@ export const AttendanceModel = {
   async getTodayByStaff(staffId) {
   return await runQuery(
     `
-    SELECT *
+    SELECT *,
+      CASE
+        WHEN CheckType = 'checkin'
+        THEN DATEDIFF(SECOND, [Timestamp], GETDATE())
+        ELSE NULL
+      END AS SecondsSinceCheckin
     FROM Attendance
     WHERE StaffId = @id
       AND CONVERT(date, [Timestamp]) = CONVERT(date, GETDATE())
-    ORDER BY [Timestamp] DESC
+    ORDER BY [Timestamp] ASC
     `,
     { id: { type: sql.Int, value: parseInt(staffId) } }
   );

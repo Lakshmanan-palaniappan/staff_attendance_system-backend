@@ -26,10 +26,21 @@ function dateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 function parseSqlDateAsIST(sqlDate) {
-  // sqlDate example: "2025-12-21 16:34:10.697"
-  return new Date(sqlDate.replace(" ", "T") + "+05:30");
-}
+  if (!sqlDate) return null;
 
+  // Case 1: Already a JS Date (mssql default)
+  if (sqlDate instanceof Date) {
+    return sqlDate; // ✅ already correct local time
+  }
+
+  // Case 2: String from SQL (fallback safety)
+  if (typeof sqlDate === "string") {
+    return new Date(sqlDate.replace(" ", "T") + "+05:30");
+  }
+
+  // Fallback
+  return new Date(sqlDate);
+}
 
 function localDateOnly(d) {
   const x = new Date(d);
@@ -98,27 +109,14 @@ export async function markAttendance(req, res) {
 
     const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
 
-    // 🔑 FIRST CHECK-IN OF TODAY (AUTHORITATIVE)
-    const firstCheckinToday = todayRecords
-      .filter(r =>
-        r.CheckType?.toLowerCase() === "checkin" &&
-        localDateOnly(parseSqlDateAsIST(r.Timestamp)).getTime() ===
-          localDateOnly(now).getTime()
-      )
-      .sort(
-        (a, b) =>
-          parseSqlDateAsIST(a.Timestamp) -
-          parseSqlDateAsIST(b.Timestamp)
-      )[0];
+    // 🔑 FIRST CHECK-IN OF TODAY (IMMUTABLE)
+    const firstCheckinToday = todayRecords.find(
+      r => r.CheckType?.toLowerCase() === "checkin"
+    );
 
     // 🔑 LATEST RECORD TODAY
     const lastToday = todayRecords.length
-      ? todayRecords.reduce((latest, row) =>
-          parseSqlDateAsIST(row.Timestamp) >
-          parseSqlDateAsIST(latest.Timestamp)
-            ? row
-            : latest
-        )
+      ? todayRecords[todayRecords.length - 1]
       : null;
 
     /* =========================================================
@@ -129,7 +127,7 @@ export async function markAttendance(req, res) {
       const lastAny = lastAnyRows.length ? lastAnyRows[0] : null;
 
       if (lastAny && lastAny.CheckType?.toLowerCase() === "checkin") {
-        const lastDate = dateOnly(parseSqlDateAsIST(lastAny.Timestamp));
+        const lastDate = dateOnly(new Date(lastAny.Timestamp));
 
         if (lastDate < todayDate) {
           const empStatus = await getEmpStatusForStaff(staffId);
@@ -196,23 +194,12 @@ export async function markAttendance(req, res) {
     /* ---------------- CHECKOUT FLOW ---------------- */
     if (lastType === "checkin") {
       if (firstCheckinToday) {
-        const firstTs = parseSqlDateAsIST(
-          firstCheckinToday.Timestamp
-        ).getTime();
+        const elapsedSeconds =
+          Number(firstCheckinToday.SecondsSinceCheckin || 0);
 
-        const nowTs = Date.now();
-        const elapsedSeconds = Math.floor(
-          (nowTs - firstTs) / 1000
-        );
-
-        // 🔎 DEBUG LOG (REMOVE AFTER CONFIRMATION)
-        console.log("⏱️ CHECKOUT COOLDOWN DEBUG", {
-          nowUTC: new Date(nowTs).toISOString(),
-          checkinRaw: firstCheckinToday.Timestamp,
-          checkinIST: parseSqlDateAsIST(
-            firstCheckinToday.Timestamp
-          ).toString(),
+        console.log("⏱️ COOLDOWN (SQL AUTH)", {
           elapsedSeconds,
+          remaining: CHECKOUT_COOLDOWN_SECONDS - elapsedSeconds,
         });
 
         if (elapsedSeconds < CHECKOUT_COOLDOWN_SECONDS) {
@@ -223,12 +210,10 @@ export async function markAttendance(req, res) {
           });
         }
       }
+      // ✅ After first 5 minutes → cooldown NEVER applies again today
 
       // Midnight guard
-      if (
-        dateOnly(parseSqlDateAsIST(lastToday.Timestamp)) <
-        todayDate
-      ) {
+      if (dateOnly(new Date(lastToday.Timestamp)) < todayDate) {
         return res.status(400).json({
           error:
             "Checkout window for that day is closed. Please contact admin.",
