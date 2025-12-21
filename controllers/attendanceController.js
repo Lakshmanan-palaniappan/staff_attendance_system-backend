@@ -175,10 +175,12 @@ return res.json({
 
     /* ---------------- CHECKOUT FLOW ---------------- */
     if (lastType === "checkin") {
-      const diffSeconds = Math.max(
-        0,
-        Number(lastToday.SecondsSinceCheckin || 0)
-      );
+      // 🔥 Calculate cooldown from last CHECK-IN timestamp
+const checkinTs = new Date(lastToday.Timestamp);
+const diffSeconds = Math.floor(
+  (Date.now() - checkinTs.getTime()) / 1000
+);
+
 
       const remainingSeconds =
         CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
@@ -257,9 +259,17 @@ return res.json({
     if (lastType === "checkout") {
   const empStatus = await getEmpStatusForStaff(staffId);
 
+  // 🔥 UPDATE checkout timestamp AGAIN
+  await AttendanceModel.upsertCheckout({
+    staffId,
+    latitude: lat,
+    longitude: lng,
+  });
+
   return res.json({
     success: true,
-    message: "Attendance already completed for today.",
+    alreadyCheckedIn: true, // ✅ KEEP for frontend stability
+    message: "Checkout time updated.",
     currentStatus: "checkout",
     empStatus: empStatus || null,
   });
