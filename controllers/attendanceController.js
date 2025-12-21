@@ -181,21 +181,17 @@ const diffSeconds = Math.floor(
   (Date.now() - checkinTs.getTime()) / 1000
 );
 
+// ⛔ If already beyond cooldown window → allow checkout
+if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
+  const remainingSeconds =
+    CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
 
-      const remainingSeconds =
-        CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
+  return res.status(429).json({
+    error: "Checkout locked",
+    cooldownMinutesLeft: Math.ceil(remainingSeconds / 60), // ✅ MINUTES ONLY
+  });
+}
 
-      if (remainingSeconds > 0) {
-        return res.status(429).json({
-          error: `Checkout locked. Wait ${Math.floor(
-            remainingSeconds / 60
-          )} min ${remainingSeconds % 60} sec.`,
-          cooldown: {
-            totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-            secondsRemaining: remainingSeconds,
-          },
-        });
-      }
 
       // Midnight guard
       if (dateOnly(new Date(lastToday.Timestamp)) < todayDate) {
