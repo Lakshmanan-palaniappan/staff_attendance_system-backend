@@ -181,14 +181,18 @@ const diffSeconds = Math.floor(
   (Date.now() - checkinTs.getTime()) / 1000
 );
 
-// ⛔ If already beyond cooldown window → allow checkout
 if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
   const remainingSeconds =
     CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
 
+  const remainingMinutes = Math.max(
+    1,
+    Math.ceil(remainingSeconds / 60)
+  );
+
   return res.status(429).json({
-    error: "Checkout locked",
-    cooldownMinutesLeft: Math.ceil(remainingSeconds / 60), // ✅ MINUTES ONLY
+    error: `Checkout locked. Wait ${remainingMinutes} minute(s).`,
+    cooldownMinutesLeft: remainingMinutes,
   });
 }
 
