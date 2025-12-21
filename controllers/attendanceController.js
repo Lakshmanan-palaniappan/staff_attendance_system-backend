@@ -88,8 +88,12 @@ export async function markAttendance(req, res) {
     const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
 
     // 🔑 FIRST check-in of today (authoritative for cooldown)
+// 🔑 FIRST check-in of TODAY only (authoritative for cooldown)
 const firstCheckinToday = todayRecords
-  .filter(r => r.CheckType?.toLowerCase() === "checkin")
+  .filter(r =>
+    r.CheckType?.toLowerCase() === "checkin" &&
+    dateOnly(new Date(r.Timestamp)).getTime() === todayDate.getTime()
+  )
   .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
 
 
