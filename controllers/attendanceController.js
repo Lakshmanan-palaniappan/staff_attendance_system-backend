@@ -98,7 +98,7 @@ export async function markAttendance(req, res) {
 const firstCheckinToday = todayRecords
   .filter(r =>
     r.CheckType?.toLowerCase() === "checkin" &&
-    localDateOnly(r.Timestamp).getTime() === localDateOnly(now).getTime()
+    localDateOnly(r.Timestamp).getTime() === localDateOnly(new Date()).getTime()
   )
   .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
 
@@ -192,25 +192,28 @@ return res.json({
     if (lastType === "checkin") {
       // 🔥 Calculate cooldown from last CHECK-IN timestamp
       // ⏱ Cooldown ONLY from FIRST check-in of the day
+// 🔒 Apply cooldown ONLY for first check-in of the day
 if (firstCheckinToday) {
-  const firstCheckinTs = new Date(firstCheckinToday.Timestamp);
+  const firstTs = new Date(firstCheckinToday.Timestamp).getTime();
+  const diffSeconds = Math.floor((Date.now() - firstTs) / 1000);
 
-  const diffSeconds = Math.floor(
-    (Date.now() - firstCheckinTs.getTime()) / 1000
-  );
-
-  // ⛔ Apply cooldown ONLY within first 5 minutes
   if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
-    const remainingMinutes = Math.ceil(
-      (CHECKOUT_COOLDOWN_SECONDS - diffSeconds) / 60
-    );
+    const remainingSeconds =
+      CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
 
     return res.status(429).json({
-      error: `Checkout locked. Wait ${remainingMinutes} minute(s).`,
-      cooldownMinutesLeft: remainingMinutes, // ⬅ frontend expects minutes
+      error: `Checkout locked. Wait ${Math.floor(
+        remainingSeconds / 60
+      )} min ${remainingSeconds % 60} sec.`,
+      cooldown: {
+        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+        secondsRemaining: remainingSeconds,
+      },
     });
   }
 }
+// ✅ After 5 minutes → no cooldown ever again
+
 // ✅ After 5 minutes → NO cooldown ever again
 
 
