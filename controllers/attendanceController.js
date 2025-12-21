@@ -26,6 +26,12 @@ function dateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+function localDateOnly(d) {
+  const x = new Date(d);
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate());
+}
+
+
 // Read EmpAttdCheckForApp status for this staff (via EmpUName → EmpId)
 async function getEmpStatusForStaff(staffId) {
   const rows = await runQuery(
@@ -92,10 +98,9 @@ export async function markAttendance(req, res) {
 const firstCheckinToday = todayRecords
   .filter(r =>
     r.CheckType?.toLowerCase() === "checkin" &&
-    dateOnly(new Date(r.Timestamp)).getTime() === todayDate.getTime()
+    localDateOnly(r.Timestamp).getTime() === localDateOnly(now).getTime()
   )
   .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
-
 
     // Latest record today (authoritative)
     const lastToday = todayRecords.length
