@@ -259,12 +259,12 @@ return res.json({
 
   return res.json({
     success: true,
-    alreadyCheckedIn: true,
     message: "Attendance already completed for today.",
     currentStatus: "checkout",
     empStatus: empStatus || null,
   });
 }
+
 
 
     return res.status(400).json({
