@@ -21,6 +21,13 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+function getCooldownSeconds(checkinTimestamp) {
+  const diffSeconds = Math.floor(
+    (Date.now() - new Date(checkinTimestamp).getTime()) / 1000
+  );
+  return Math.max(0, CHECKOUT_COOLDOWN_SECONDS - diffSeconds);
+}
+
 
 function dateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -182,8 +189,8 @@ const diffSeconds = Math.floor(
 );
 
 
-      const remainingSeconds =
-        CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
+      const remainingSeconds = getCooldownSeconds(lastToday.Timestamp);
+
 
       if (remainingSeconds > 0) {
         return res.status(429).json({
@@ -257,23 +264,56 @@ const diffSeconds = Math.floor(
 
     /* ---------------- ALREADY CHECKED OUT ---------------- */
     if (lastType === "checkout") {
-  const empStatus = await getEmpStatusForStaff(staffId);
+  // 🔥 Find LAST CHECK-IN of today (cooldown anchor)
+  const lastCheckin = todayRecords
+    .filter(r => r.CheckType?.toLowerCase() === "checkin")
+    .sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))[0];
 
-  // 🔥 UPDATE checkout timestamp AGAIN
+  if (!lastCheckin) {
+    return res.status(400).json({
+      error: "Invalid state: checkout exists without check-in.",
+    });
+  }
+
+  // 🔥 Cooldown calculation (SECONDS — backend authoritative)
+  const diffSeconds = Math.floor(
+    (Date.now() - new Date(lastCheckin.Timestamp).getTime()) / 1000
+  );
+
+  const remainingSeconds = Math.max(
+    0,
+    CHECKOUT_COOLDOWN_SECONDS - diffSeconds
+  );
+
+  // 🔒 Still under cooldown → BLOCK
+  if (remainingSeconds > 0) {
+    return res.status(429).json({
+      error: "Checkout locked",
+      cooldown: {
+        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
+        secondsRemaining: remainingSeconds,
+      },
+      currentStatus: "checkout",
+    });
+  }
+
+  // ✅ Cooldown passed → UPDATE checkout timestamp
   await AttendanceModel.upsertCheckout({
     staffId,
     latitude: lat,
     longitude: lng,
   });
 
+  const empStatus = await getEmpStatusForStaff(staffId);
+
   return res.json({
     success: true,
-    alreadyCheckedIn: true, // ✅ KEEP for frontend stability
-    message: "Checkout time updated.",
+    message: "Attendance marked: checkout",
     currentStatus: "checkout",
     empStatus: empStatus || null,
   });
 }
+
 
 
 
