@@ -21,19 +21,17 @@ export const AttendanceModel = {
 
   // ---------- TODAY ONLY ----------
   async getTodayByStaff(staffId) {
-    return await runQuery(
-      `
-      SELECT *,
-  DATEDIFF(SECOND, [Timestamp], GETDATE()) AS SecondsSinceCheckin
-FROM Attendance
-WHERE StaffId = @id
-  AND CONVERT(date, [Timestamp]) = CONVERT(date, GETDATE())
-ORDER BY [Timestamp] DESC
-
-      `,
-      { id: { type: sql.Int, value: parseInt(staffId) } }
-    );
-  },
+  return await runQuery(
+    `
+    SELECT *
+    FROM Attendance
+    WHERE StaffId = @id
+      AND CONVERT(date, [Timestamp]) = CONVERT(date, GETDATE())
+    ORDER BY [Timestamp] DESC
+    `,
+    { id: { type: sql.Int, value: parseInt(staffId) } }
+  );
+},
 
   // ---------- ALL RECORDS ----------
   async getAllByStaff(staffId) {

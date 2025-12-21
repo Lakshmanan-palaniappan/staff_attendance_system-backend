@@ -93,33 +93,30 @@ export async function markAttendance(req, res) {
 
     const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
 
-    // 🔑 FIRST check-in of today (authoritative for cooldown)
-// 🔑 FIRST check-in of TODAY only (authoritative for cooldown)
-const firstCheckinToday = todayRecords
-  .filter(r =>
-    r.CheckType?.toLowerCase() === "checkin" &&
-    localDateOnly(r.Timestamp).getTime() === localDateOnly(new Date()).getTime()
-  )
-  .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
+    // 🔑 FIRST check-in of TODAY (IMMUTABLE, authoritative)
+    const firstCheckinToday = todayRecords
+      .filter(r =>
+        r.CheckType?.toLowerCase() === "checkin" &&
+        localDateOnly(r.Timestamp).getTime() === localDateOnly(now).getTime()
+      )
+      .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
 
-    // Latest record today (authoritative)
+    // Latest record today
     const lastToday = todayRecords.length
-      ? todayRecords.reduce((latest, row) => {
-          if (!latest) return row;
-          return new Date(row.Timestamp) > new Date(latest.Timestamp)
+      ? todayRecords.reduce((latest, row) =>
+          new Date(row.Timestamp) > new Date(latest.Timestamp)
             ? row
-            : latest;
-        }, null)
+            : latest
+        )
       : null;
 
     /* =========================================================
-       CASE 1: NO RECORD TODAY → FIRST CHECK-IN ONLY
+       CASE 1: NO RECORD TODAY → FIRST CHECK-IN
     ========================================================= */
     if (!lastToday) {
       const lastAnyRows = await AttendanceModel.getLastByStaff(staffId);
       const lastAny = lastAnyRows.length ? lastAnyRows[0] : null;
 
-      // Previous day left open → validate EmpAttdCheckForApp
       if (lastAny && lastAny.CheckType?.toLowerCase() === "checkin") {
         const lastDate = dateOnly(new Date(lastAny.Timestamp));
 
@@ -147,7 +144,7 @@ const firstCheckinToday = todayRecords
         }
       }
 
-      // Geofence check for CHECK-IN
+      // Geofence check (CHECK-IN)
       const distance = getDistance(
         lat,
         lng,
@@ -160,27 +157,24 @@ const firstCheckinToday = todayRecords
           .json({ error: "Cannot check in outside geofence" });
       }
 
-      // ✅ INSERT ONLY IF NOT EXISTS (first check-in preserved)
       const checkinResult = await AttendanceModel.insertCheckinOnce({
-  staffId,
-  latitude: lat,
-  longitude: lng,
-});
+        staffId,
+        latitude: lat,
+        longitude: lng,
+      });
 
-const alreadyCheckedIn = checkinResult.AlreadyCheckedIn === 1;
+      const alreadyCheckedIn = checkinResult.AlreadyCheckedIn === 1;
+      const empStatus = await getEmpStatusForStaff(staffId);
 
-const empStatus = await getEmpStatusForStaff(staffId);
-
-return res.json({
-  success: true,
-  message: alreadyCheckedIn
-    ? "You are already checked in for today."
-    : "Attendance marked: checkin",
-  currentStatus: "checkin",
-  alreadyCheckedIn,
-  empStatus: empStatus || null,
-});
-
+      return res.json({
+        success: true,
+        message: alreadyCheckedIn
+          ? "You are already checked in for today."
+          : "Attendance marked: checkin",
+        currentStatus: "checkin",
+        alreadyCheckedIn,
+        empStatus: empStatus || null,
+      });
     }
 
     /* =========================================================
@@ -190,33 +184,20 @@ return res.json({
 
     /* ---------------- CHECKOUT FLOW ---------------- */
     if (lastType === "checkin") {
-      // 🔥 Calculate cooldown from last CHECK-IN timestamp
-      // ⏱ Cooldown ONLY from FIRST check-in of the day
-// 🔒 Apply cooldown ONLY for first check-in of the day
-if (firstCheckinToday) {
-  const firstTs = new Date(firstCheckinToday.Timestamp).getTime();
-  const diffSeconds = Math.floor((Date.now() - firstTs) / 1000);
+      // ⏱️ COOLDOWN — ONLY FROM FIRST CHECK-IN
+      if (firstCheckinToday) {
+        const firstTs = new Date(firstCheckinToday.Timestamp).getTime();
+        const elapsedSeconds = Math.floor((Date.now() - firstTs) / 1000);
 
-  if (diffSeconds < CHECKOUT_COOLDOWN_SECONDS) {
-    const remainingSeconds =
-      CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
-
-    return res.status(429).json({
-      error: `Checkout locked. Wait ${Math.floor(
-        remainingSeconds / 60
-      )} min ${remainingSeconds % 60} sec.`,
-      cooldown: {
-        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-        secondsRemaining: remainingSeconds,
-      },
-    });
-  }
-}
-// ✅ After 5 minutes → no cooldown ever again
-
-// ✅ After 5 minutes → NO cooldown ever again
-
-
+        if (elapsedSeconds < CHECKOUT_COOLDOWN_SECONDS) {
+          return res.status(429).json({
+            error: "Checkout locked",
+            cooldownSeconds:
+              CHECKOUT_COOLDOWN_SECONDS - elapsedSeconds, // ⬅ ONLY THIS
+          });
+        }
+      }
+      // ✅ After this → cooldown NEVER applies again today
 
       // Midnight guard
       if (dateOnly(new Date(lastToday.Timestamp)) < todayDate) {
@@ -229,8 +210,7 @@ if (firstCheckinToday) {
       const empStatus = await getEmpStatusForStaff(staffId);
       if (!empStatus) {
         return res.status(400).json({
-          error:
-            "Cannot checkout. Employee status not configured.",
+          error: "Cannot checkout. Employee status not configured.",
         });
       }
 
@@ -248,7 +228,7 @@ if (firstCheckinToday) {
         });
       }
 
-      // Geofence check for CHECKOUT
+      // Geofence check (CHECKOUT)
       const distanceCheckout = getDistance(
         lat,
         lng,
@@ -261,7 +241,6 @@ if (firstCheckinToday) {
           .json({ error: "Cannot checkout outside geofence" });
       }
 
-      // ✅ UPDATE LAST CHECKOUT OR INSERT IF NONE
       await AttendanceModel.upsertCheckout({
         staffId,
         latitude: lat,
@@ -278,25 +257,21 @@ if (firstCheckinToday) {
 
     /* ---------------- ALREADY CHECKED OUT ---------------- */
     if (lastType === "checkout") {
-  const empStatus = await getEmpStatusForStaff(staffId);
+      const empStatus = await getEmpStatusForStaff(staffId);
 
-  // 🔥 UPDATE checkout timestamp AGAIN
-  await AttendanceModel.upsertCheckout({
-    staffId,
-    latitude: lat,
-    longitude: lng,
-  });
+      await AttendanceModel.upsertCheckout({
+        staffId,
+        latitude: lat,
+        longitude: lng,
+      });
 
-  return res.json({
-    success: true,
-    alreadyCheckedIn: true, // ✅ KEEP for frontend stability
-    message: "Checkout time updated.",
-    currentStatus: "checkout",
-    empStatus: empStatus || null,
-  });
-}
-
-
+      return res.json({
+        success: true,
+        message: "Checkout time updated.",
+        currentStatus: "checkout",
+        empStatus: empStatus || null,
+      });
+    }
 
     return res.status(400).json({
       error: "Invalid attendance state",
@@ -306,6 +281,7 @@ if (firstCheckinToday) {
     return res.status(500).json({ error: err.message });
   }
 }
+
 
 
 export async function getTodayAttendance(req, res) {
