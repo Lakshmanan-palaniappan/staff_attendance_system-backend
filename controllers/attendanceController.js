@@ -255,13 +255,17 @@ return res.json({
 
     /* ---------------- ALREADY CHECKED OUT ---------------- */
     if (lastType === "checkout") {
-      const empStatus = await getEmpStatusForStaff(staffId);
-      return res.status(400).json({
-        error:
-          "You have already checked out for today. Further check-ins are not allowed.",
-        empStatus: empStatus || null,
-      });
-    }
+  const empStatus = await getEmpStatusForStaff(staffId);
+
+  return res.json({
+    success: true,
+    alreadyCheckedIn: true,
+    message: "Attendance already completed for today.",
+    currentStatus: "checkout",
+    empStatus: empStatus || null,
+  });
+}
+
 
     return res.status(400).json({
       error: "Invalid attendance state",
