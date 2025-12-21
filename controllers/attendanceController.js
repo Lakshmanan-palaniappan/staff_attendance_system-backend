@@ -25,6 +25,11 @@ function getDistance(lat1, lon1, lat2, lon2) {
 function dateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
+function parseSqlDateAsIST(sqlDate) {
+  // sqlDate example: "2025-12-21 16:34:10.697"
+  return new Date(sqlDate.replace(" ", "T") + "+05:30");
+}
+
 
 function localDateOnly(d) {
   const x = new Date(d);
@@ -93,18 +98,24 @@ export async function markAttendance(req, res) {
 
     const todayRecords = await AttendanceModel.getTodayByStaff(staffId);
 
-    // 🔑 FIRST check-in of TODAY (IMMUTABLE, authoritative)
+    // 🔑 FIRST CHECK-IN OF TODAY (AUTHORITATIVE)
     const firstCheckinToday = todayRecords
       .filter(r =>
         r.CheckType?.toLowerCase() === "checkin" &&
-        localDateOnly(r.Timestamp).getTime() === localDateOnly(now).getTime()
+        localDateOnly(parseSqlDateAsIST(r.Timestamp)).getTime() ===
+          localDateOnly(now).getTime()
       )
-      .sort((a, b) => new Date(a.Timestamp) - new Date(b.Timestamp))[0];
+      .sort(
+        (a, b) =>
+          parseSqlDateAsIST(a.Timestamp) -
+          parseSqlDateAsIST(b.Timestamp)
+      )[0];
 
-    // Latest record today
+    // 🔑 LATEST RECORD TODAY
     const lastToday = todayRecords.length
       ? todayRecords.reduce((latest, row) =>
-          new Date(row.Timestamp) > new Date(latest.Timestamp)
+          parseSqlDateAsIST(row.Timestamp) >
+          parseSqlDateAsIST(latest.Timestamp)
             ? row
             : latest
         )
@@ -118,7 +129,7 @@ export async function markAttendance(req, res) {
       const lastAny = lastAnyRows.length ? lastAnyRows[0] : null;
 
       if (lastAny && lastAny.CheckType?.toLowerCase() === "checkin") {
-        const lastDate = dateOnly(new Date(lastAny.Timestamp));
+        const lastDate = dateOnly(parseSqlDateAsIST(lastAny.Timestamp));
 
         if (lastDate < todayDate) {
           const empStatus = await getEmpStatusForStaff(staffId);
@@ -163,16 +174,16 @@ export async function markAttendance(req, res) {
         longitude: lng,
       });
 
-      const alreadyCheckedIn = checkinResult.AlreadyCheckedIn === 1;
       const empStatus = await getEmpStatusForStaff(staffId);
 
       return res.json({
         success: true,
-        message: alreadyCheckedIn
-          ? "You are already checked in for today."
-          : "Attendance marked: checkin",
+        message:
+          checkinResult.AlreadyCheckedIn === 1
+            ? "You are already checked in for today."
+            : "Attendance marked: checkin",
         currentStatus: "checkin",
-        alreadyCheckedIn,
+        alreadyCheckedIn: checkinResult.AlreadyCheckedIn === 1,
         empStatus: empStatus || null,
       });
     }
@@ -184,23 +195,40 @@ export async function markAttendance(req, res) {
 
     /* ---------------- CHECKOUT FLOW ---------------- */
     if (lastType === "checkin") {
-      // ⏱️ COOLDOWN — ONLY FROM FIRST CHECK-IN
       if (firstCheckinToday) {
-        const firstTs = new Date(firstCheckinToday.Timestamp).getTime();
-        const elapsedSeconds = Math.floor((Date.now() - firstTs) / 1000);
+        const firstTs = parseSqlDateAsIST(
+          firstCheckinToday.Timestamp
+        ).getTime();
+
+        const nowTs = Date.now();
+        const elapsedSeconds = Math.floor(
+          (nowTs - firstTs) / 1000
+        );
+
+        // 🔎 DEBUG LOG (REMOVE AFTER CONFIRMATION)
+        console.log("⏱️ CHECKOUT COOLDOWN DEBUG", {
+          nowUTC: new Date(nowTs).toISOString(),
+          checkinRaw: firstCheckinToday.Timestamp,
+          checkinIST: parseSqlDateAsIST(
+            firstCheckinToday.Timestamp
+          ).toString(),
+          elapsedSeconds,
+        });
 
         if (elapsedSeconds < CHECKOUT_COOLDOWN_SECONDS) {
           return res.status(429).json({
             error: "Checkout locked",
             cooldownSeconds:
-              CHECKOUT_COOLDOWN_SECONDS - elapsedSeconds, // ⬅ ONLY THIS
+              CHECKOUT_COOLDOWN_SECONDS - elapsedSeconds,
           });
         }
       }
-      // ✅ After this → cooldown NEVER applies again today
 
       // Midnight guard
-      if (dateOnly(new Date(lastToday.Timestamp)) < todayDate) {
+      if (
+        dateOnly(parseSqlDateAsIST(lastToday.Timestamp)) <
+        todayDate
+      ) {
         return res.status(400).json({
           error:
             "Checkout window for that day is closed. Please contact admin.",
@@ -281,6 +309,7 @@ export async function markAttendance(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
+
 
 
 
