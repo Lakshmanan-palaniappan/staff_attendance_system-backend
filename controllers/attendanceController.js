@@ -257,51 +257,21 @@ const diffSeconds = Math.floor(
 
     /* ---------------- ALREADY CHECKED OUT ---------------- */
     if (lastType === "checkout") {
-  // 🔥 Find the LAST CHECK-IN today
-  const lastCheckin = todayRecords
-    .filter(r => r.CheckType?.toLowerCase() === "checkin")
-    .sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))[0];
+  const empStatus = await getEmpStatusForStaff(staffId);
 
-  if (!lastCheckin) {
-    return res.status(400).json({
-      error: "No check-in found for checkout.",
-    });
-  }
-
-  const checkinTs = new Date(lastCheckin.Timestamp);
-  const diffSeconds = Math.floor(
-    (Date.now() - checkinTs.getTime()) / 1000
-  );
-
-  const remainingSeconds =
-    CHECKOUT_COOLDOWN_SECONDS - diffSeconds;
-
-  if (remainingSeconds > 0) {
-    return res.status(429).json({
-      error: `Checkout locked. Wait ${Math.floor(
-        remainingSeconds / 60
-      )} min ${remainingSeconds % 60} sec.`,
-      cooldown: {
-        totalSeconds: CHECKOUT_COOLDOWN_SECONDS,
-        secondsRemaining: remainingSeconds,
-      },
-    });
-  }
-
-  // 🔥 Allow checkout update
+  // 🔥 UPDATE checkout timestamp AGAIN
   await AttendanceModel.upsertCheckout({
     staffId,
     latitude: lat,
     longitude: lng,
   });
 
-  const empStatus = await getEmpStatusForStaff(staffId);
-
   return res.json({
     success: true,
-    message: "Attendance marked: checkout",
+    alreadyCheckedIn: true, // ✅ KEEP for frontend stability
+    message: "Checkout time updated.",
     currentStatus: "checkout",
-    empStatus,
+    empStatus: empStatus || null,
   });
 }
 
